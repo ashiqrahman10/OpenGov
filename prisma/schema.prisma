@@ -1,0 +1,22 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider             = "prisma-client-py"
+  interface           = "sync"
+  recursive_type_depth = 5
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  email         String   @unique
+  hashedPassword String? 
+  isActive      Boolean  @default(true)
+  authProvider  String   @default("email")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("users")
+}
