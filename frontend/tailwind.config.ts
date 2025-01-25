@@ -55,7 +55,13 @@ const config: Config = {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',
   			sm: 'calc(var(--radius) - 4px)'
-  		}
+  		},
+		fontFamily: {
+			poppins: ['Poppins', 'sans-serif'],
+			inter: ['Inter', 'sans-serif'],
+			gloock: ['Gloock', 'serif'],
+			press: ['"Press Start 2P"', 'cursive'],
+		},
   	}
   },
   plugins: [require("tailwindcss-animate")],
