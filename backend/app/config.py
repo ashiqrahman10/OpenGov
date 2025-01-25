@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str
     FIREBASE_STORAGE_BUCKET: str
     FIREBASE_CREDENTIALS_PATH: str
+    GEMINI_API_KEY: str = ""
 
     class Config:
         env_file = ".env"

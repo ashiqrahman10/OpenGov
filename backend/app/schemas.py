@@ -113,3 +113,12 @@ class ActionItem(ActionItemBase):
 
     class Config:
         from_attributes = True
+
+class FileContent(BaseModel):
+    content: str
+
+class FileSummary(BaseModel):
+    summary: str
+
+class FileTranslation(BaseModel):
+    translated_content: str

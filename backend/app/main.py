@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from . import models, schemas, database
@@ -15,6 +15,7 @@ from .agents.groq_analyzer import GroqAnalyzer
 from .services.firebase import FirebaseService
 from typing import List, Optional
 from .auth.oauth import get_current_user, get_current_user_optional
+from .agents.file_agent import FileAgent
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -156,6 +157,12 @@ groq_analyzer = GroqAnalyzer(api_key=settings.GROQ_API_KEY)
 # Initialize Firebase service
 firebase_service = FirebaseService()
 
+# Initialize FileAgent with both API keys
+file_agent = FileAgent(
+    groq_api_key=settings.GROQ_API_KEY,
+    gemini_api_key=settings.GEMINI_API_KEY
+)
+
 @app.post("/feedback", response_model=schemas.Feedback)
 def create_feedback(
     feedback: schemas.FeedbackCreate,
@@ -255,3 +262,85 @@ async def upload_page(request: Request):
         "upload.html", 
         {"request": request}
     )
+
+@app.get("/documents/{document_id}/content")
+async def get_document_content(
+    document_id: int,
+    db: Session = Depends(database.get_db)
+):
+    # Get document without checking ownership
+    document = db.query(models.Document).filter(
+        models.Document.id == document_id
+    ).first()
+    
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    try:
+        content, is_text = await file_agent.read_file_content(document.firebase_url, document.content_type)
+        if is_text:
+            return {"content": content}
+        return Response(content=content, media_type=document.content_type)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error reading document content: {str(e)}"
+        )
+
+@app.get("/documents/{document_id}/summary", response_model=schemas.FileSummary)
+async def get_document_summary(
+    document_id: int,
+    max_length: Optional[int] = 500,
+    db: Session = Depends(database.get_db)
+):
+    # Get document without checking ownership
+    document = db.query(models.Document).filter(
+        models.Document.id == document_id
+    ).first()
+    
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    try:
+        content, is_text = await file_agent.read_file_content(document.firebase_url, document.content_type)
+        if not is_text:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot summarize binary content. Only text files are supported."
+            )
+        summary = await file_agent.summarize_content(content, max_length)
+        return {"summary": summary}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error summarizing document: {str(e)}"
+        )
+
+@app.get("/documents/{document_id}/translate/{language}", response_model=schemas.FileTranslation)
+async def translate_document(
+    document_id: int,
+    language: str,
+    db: Session = Depends(database.get_db)
+):
+    # Get document without checking ownership
+    document = db.query(models.Document).filter(
+        models.Document.id == document_id
+    ).first()
+    
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    try:
+        content, is_text = await file_agent.read_file_content(document.firebase_url, document.content_type)
+        if not is_text:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot translate binary content. Only text files are supported."
+            )
+        translated_content = await file_agent.translate_content(content, language)
+        return {"translated_content": translated_content}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error translating document: {str(e)}"
+        )

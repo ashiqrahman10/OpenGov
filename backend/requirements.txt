@@ -10,3 +10,4 @@ aiohttp
 pydantic-settings
 jinja2
 groq
+aiohttp
