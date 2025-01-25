@@ -27,7 +27,22 @@ import io
 models.Base.metadata.drop_all(bind=engine)  # Drop existing tables
 models.Base.metadata.create_all(bind=engine)  # Create new tables
 
-app = FastAPI()
+app = FastAPI(
+    title="OpenGov API",
+    description="API for OpenGov applications",
+    version="1.0.0",
+    openapi_tags=[
+        {
+            "name": "Authentication",
+            "description": "Login and registration operations"
+        },
+        {
+            "name": "Users",
+            "description": "User management operations"
+        }
+        # Add more tags as needed
+    ]
+)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -52,8 +67,24 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_exception
     return user
 
-@app.post("/register", response_model=schemas.User)
-def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
+@app.post("/register", response_model=schemas.User, tags=["Authentication"])
+async def register(
+    user: schemas.UserCreate = Body(
+        ...,
+        description="User registration details",
+        example={
+            "email": "user@example.com",
+            "password": "strongpassword123"
+        }
+    ),
+    db: Session = Depends(database.get_db)
+):
+    """
+    Register a new user.
+    
+    - **email**: Required. User's email address
+    - **password**: Required. User's password (will be hashed)
+    """
     db_user = db.query(models.User).filter(models.User.email == user.email).first()
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -74,12 +105,27 @@ def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
     return db_user
 
 # New endpoint to create admin users (protected)
-@app.post("/create-admin", response_model=schemas.User)
-def create_admin(
-    user: schemas.UserCreate,
+@app.post("/create-admin", response_model=schemas.User, tags=["Users"])
+async def create_admin(
+    user: schemas.UserCreate = Body(
+        ...,
+        description="Admin user details",
+        example={
+            "email": "admin@example.com",
+            "password": "adminpass123"
+        }
+    ),
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(database.get_db)
 ):
+    """
+    Create a new admin user.
+    
+    Requires authentication with admin privileges.
+    
+    - **email**: Required. Admin's email address
+    - **password**: Required. Admin's password
+    """
     if current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -105,8 +151,19 @@ def create_admin(
     db.refresh(db_user)
     return db_user
 
-@app.post("/token", response_model=schemas.Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(database.get_db)):
+@app.post("/token", response_model=schemas.Token, tags=["Authentication"])
+async def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(database.get_db)
+):
+    """
+    Login to get access token.
+    
+    - **username**: Required. User's email address
+    - **password**: Required. User's password
+    
+    Returns an access token and token type.
+    """
     user = db.query(models.User).filter(models.User.email == form_data.username).first()
     if not user or not utils.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
@@ -760,3 +817,23 @@ async def get_user_action_items(
 
 # Add this line to include the router in the app
 app.include_router(router)
+
+@app.post("/upload", tags=["Files"])
+async def upload_file(
+    file: UploadFile = File(
+        ...,
+        description="File to upload (PDF, DOCX, etc.)"
+    ),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Upload a file for processing.
+    
+    Requires authentication.
+    
+    Supported file types:
+    - PDF
+    - DOCX
+    - Other supported formats
+    """
+    # Your existing code...
