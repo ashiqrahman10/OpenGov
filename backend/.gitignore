@@ -171,3 +171,6 @@ cython_debug/
 .pypirc
 
 serviceAccountKey.json
+
+
+sql_app.db
