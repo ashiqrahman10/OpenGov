@@ -6,7 +6,7 @@
 </head>
 <body>
     <div id="g_id_onload"
-         data-client_id="your-new-client-id-here"
+         data-client_id="{{ settings.GOOGLE_CLIENT_ID }}"
          data-callback="handleCredentialResponse"
          data-auto_prompt="false">
     </div>
@@ -19,13 +19,13 @@
          data-logo_alignment="left">
     </div>
 
+    <div id="loginStatus" style="margin-top: 20px;"></div>
+
     <script>
         function handleCredentialResponse(response) {
-            // This is the ID token you'll send to your backend
             console.log("ID Token: ", response.credential);
             
-            // You can test the token with your backend here
-            fetch('http://localhost:8000/google-login', {
+            fetch('http://0.0.0.0:8000/google-login', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -36,11 +36,23 @@
             })
             .then(response => response.json())
             .then(data => {
-                console.log('Success:', data);
+                console.log('Auth Success:', data);
                 localStorage.setItem('access_token', data.access_token);
+                localStorage.setItem('user_data', JSON.stringify(data.user));
+                
+                document.getElementById('loginStatus').innerHTML = `
+                    <p>Login successful!</p>
+                    <p>User ID: ${data.user.id}</p>
+                    <p>Email: ${data.user.email}</p>
+                    <p>Role: ${data.user.role}</p>
+                    <p>Access Token: ${data.access_token}</p>
+                    <p><a href="/upload-page">Go to Upload Page</a></p>
+                `;
             })
             .catch((error) => {
                 console.error('Error:', error);
+                document.getElementById('loginStatus').innerHTML = 
+                    `<p style="color: red;">Error during login: ${error}</p>`;
             });
         }
     </script>

@@ -8,7 +8,7 @@ class GroqAnalyzer:
     def analyze_feedback(self, text: str) -> Dict[str, Any]:
         """Analyze feedback using Groq LLM API."""
         prompt = f"""Analyze the following feedback and provide:
-        1. A sentiment score between 0 and 1 (0 being most negative, 1 being most positive)
+        1. A sentiment score between 0 and 5 (0 being most negative, 5 being most positive)
         2. A sentiment label (positive, negative, or neutral)
         3. Key topics mentioned
         4. A brief summary

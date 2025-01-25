@@ -26,19 +26,18 @@ class TokenData(BaseModel):
     email: str | None = None
 
 class DocumentBase(BaseModel):
-    title: str
-    content: str
-    original_language: str
-    target_language: Optional[str] = None
+    filename: str
 
 class DocumentCreate(DocumentBase):
     pass
 
-class Document(DocumentBase):
+class Document(BaseModel):
     id: int
-    translated_content: Optional[str] = None
+    filename: str
+    firebase_url: str
+    content_type: str
+    uploaded_by: Optional[int] = None
     created_at: datetime
-    updated_at: datetime
 
     class Config:
         from_attributes = True
@@ -56,6 +55,8 @@ class Feedback(BaseModel):
     content: str
     sentiment_score: float
     sentiment_label: str
+    topics: list[str]
+    summary: str
     created_at: datetime
 
     class Config:

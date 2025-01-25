@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from . import models, schemas, database
@@ -11,7 +11,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
-from .agents.sentiment_analysis import SentimentAnalysisAgent
+from .agents.groq_analyzer import GroqAnalyzer
+from .services.firebase import FirebaseService
+from typing import List, Optional
+from .auth.oauth import get_current_user, get_current_user_optional
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -105,24 +108,19 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     access_token = utils.create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
 
-@app.post("/google-login", response_model=schemas.Token)
-async def google_login(token: str, db: Session = Depends(database.get_db)):
-    user_data = await oauth.verify_google_token(token)
-    email = user_data.get("email")
-    
-    user = db.query(models.User).filter(models.User.email == email).first()
-    if not user:
-        user = models.User(
-            email=email,
-            auth_provider="google",
-            role="user"  # Default role for Google login is 'user'
+@app.post("/google-login")
+async def google_login(
+    token_data: dict,
+    db: Session = Depends(database.get_db)
+):
+    try:
+        result = await oauth.authenticate_google_user(token_data["token"], db)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
         )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    
-    access_token = utils.create_access_token(data={"sub": email})
-    return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/me", response_model=schemas.User)
 def read_users_me(current_user: models.User = Depends(get_current_user)):
@@ -130,7 +128,10 @@ def read_users_me(current_user: models.User = Depends(get_current_user)):
 
 @app.get("/login-page")
 async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse(
+        "login.html", 
+        {"request": request, "settings": settings}
+    )
 
 # Helper function to check admin status
 def get_current_admin(current_user: models.User = Depends(get_current_user)):
@@ -149,23 +150,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize sentiment analyzer
-sentiment_analyzer = SentimentAnalysisAgent()
+# Initialize Groq analyzer instead of sentiment analyzer
+groq_analyzer = GroqAnalyzer(api_key=settings.GROQ_API_KEY)
+
+# Initialize Firebase service
+firebase_service = FirebaseService()
 
 @app.post("/feedback", response_model=schemas.Feedback)
 def create_feedback(
     feedback: schemas.FeedbackCreate,
     db: Session = Depends(database.get_db)
 ):
-    # Analyze sentiment
-    sentiment_result = sentiment_analyzer.analyze_sentiment(feedback.content)
+    # Analyze feedback using Groq
+    analysis = groq_analyzer.analyze_feedback(feedback.content)
     
     # Create feedback entry
     db_feedback = models.PublicFeedback(
         name=feedback.name,
         content=feedback.content,
-        sentiment_score=sentiment_result["sentiment_score"],
-        sentiment_label=sentiment_result["sentiment_label"],
+        sentiment_score=analysis["sentiment_score"],
+        sentiment_label=analysis["sentiment_label"],
+        topics=",".join(analysis["topics"]),  # Convert list to comma-separated string
+        summary=analysis["summary"],
         created_at=datetime.utcnow()
     )
     
@@ -174,4 +180,78 @@ def create_feedback(
     db.commit()
     db.refresh(db_feedback)
     
-    return db_feedback
+    # Convert topics back to list for response
+    return {
+        **db_feedback.__dict__,
+        "topics": db_feedback.topics.split(",") if db_feedback.topics else []
+    }
+
+@app.post("/documents/upload", response_model=schemas.Document)
+async def upload_document(
+    file: UploadFile = File(...),
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(oauth.get_current_user)
+):
+    try:
+        # Upload file to Firebase with user_id
+        user_id = current_user.id if current_user else None
+        firebase_url = await firebase_service.upload_file(file, user_id)
+        
+        # Create document record in database
+        db_document = models.Document(
+            filename=file.filename,
+            firebase_url=firebase_url,
+            content_type=file.content_type,
+            uploaded_by=user_id,
+            created_at=datetime.utcnow()
+        )
+        
+        db.add(db_document)
+        db.commit()
+        db.refresh(db_document)
+        
+        return db_document
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error uploading document: {str(e)}"
+        )
+
+@app.get("/documents", response_model=List[schemas.Document])
+def get_documents(
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    try:
+        documents = db.query(models.Document).filter(
+            models.Document.uploaded_by == current_user.id
+        ).all()
+        return documents
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching documents: {str(e)}"
+        )
+
+@app.get("/documents/{document_id}", response_model=schemas.Document)
+def get_document(
+    document_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(database.get_db)
+):
+    document = db.query(models.Document).filter(
+        models.Document.id == document_id,
+        models.Document.uploaded_by == current_user.id
+    ).first()
+    
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    return document
+
+@app.get("/upload-page")
+async def upload_page(request: Request):
+    return templates.TemplateResponse(
+        "upload.html", 
+        {"request": request}
+    )
