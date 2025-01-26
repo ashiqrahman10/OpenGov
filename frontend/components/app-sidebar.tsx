@@ -1,5 +1,8 @@
-import { Calendar, Home, Inbox, Search, Settings, DoorOpen, LayoutDashboard, Newspaper, BookOpen, Presentation, Users, MessageCircle, MessageCircleWarning, ChartPie, CircleHelp, Phone } from "lucide-react"
+'use client'
+
+import { LayoutDashboard, Newspaper, BookOpen, Presentation, Users, MessageCircle, MessageCircleWarning, ChartPie, CircleHelp, Phone } from "lucide-react"
 import { Icon } from "@iconify/react"
+import { usePathname } from "next/navigation"
 
 import {
     Sidebar,
@@ -70,7 +73,11 @@ const consultationTabs = [
     },
 ]
 
+
 export function AppSidebar() {
+    const pathname = usePathname()
+    
+    console.log(pathname)
     return (
         <Sidebar variant="floating" collapsible="icon">
 
@@ -96,7 +103,7 @@ export function AppSidebar() {
                         <SidebarMenu>
                             {applicationTabs.map((item) => (
                                 <SidebarMenuItem key={item.title}>
-                                    <SidebarMenuButton asChild>
+                                    <SidebarMenuButton isActive={item.url === pathname} asChild>
                                         <a href={item.url}>
                                             <item.icon />
                                             <span>{item.title}</span>
@@ -114,7 +121,7 @@ export function AppSidebar() {
                         <SidebarMenu>
                             {consultationTabs.map((item) => (
                                 <SidebarMenuItem key={item.title}>
-                                    <SidebarMenuButton asChild>
+                                    <SidebarMenuButton isActive={item.url === pathname} asChild>
                                         <a href={item.url}>
                                             <item.icon />
                                             <span>{item.title}</span>
